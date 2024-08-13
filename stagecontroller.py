@@ -2,12 +2,15 @@ import serial
 import time
 import math
 
-STEPS_PER_MM = 200 * 32 / 2  # 200 steps per revolution, 32 microsteps, 2 mm per revolution
-STEPS_PER_MM_Z = 200 * 32 / 10
+#change to current microstep
+MICROVALUE = 1
+
+STEPS_PER_MM = 200 * MICROVALUE / 2  # 200 steps per revolution, 32 microsteps, 2 mm per revolution
+STEPS_PER_MM_Z = 200 * MICROVALUE / 10
 MAX_STEPS_PER_COMMAND = 30000  # 16-bit unsigned integer, 2 bytes
 HOME_AMOUNT_X = 350 * STEPS_PER_MM
 HOME_AMOUNT_Y = 350 * STEPS_PER_MM
-HOME_AMOUNT_Z = math.floor(100 * STEPS_PER_MM_Z)
+HOME_AMOUNT_Z = math.floor(600 * STEPS_PER_MM_Z)
 
 class StageController:
     def __init__(self, port='/dev/ttyUSB0', baudrate=9600, timeout=1):
@@ -18,6 +21,10 @@ class StageController:
 
         self.current_position = [0, 0, 0]
 
+
+    def get_position(self):
+        return self.current_position
+    
     def connect(self):
         try:
             self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
@@ -51,7 +58,7 @@ class StageController:
         doneZ = False
         while True:
             message = self.read_message()
-            # print(message)
+            print(message)
             message = message[0] if message != None and message != "" else ""
             if message == 'x':
                 doneX = True
@@ -69,8 +76,8 @@ class StageController:
     def moveBy(self, stepsX, stepsY, stepsZ, interval = 2, home = False):
         "Move the stage by the specified number of steps"
 
-        if interval < 2:
-            interval = 2
+        if interval < 60:
+            interval = 60
         
         directionX = '1' if stepsX < 0 else '0'
         directionY = '1' if stepsY < 0 else '0'
