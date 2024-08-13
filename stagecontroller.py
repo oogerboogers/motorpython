@@ -3,10 +3,11 @@ import time
 import math
 
 STEPS_PER_MM = 200 * 32 / 2  # 200 steps per revolution, 32 microsteps, 2 mm per revolution
-MAX_STEPS_PER_COMMAND = 32767  # 16-bit unsigned integer, 2 bytes
-HOME_AMOUNT_X = 100 * STEPS_PER_MM
-HOME_AMOUNT_Y = 100 * STEPS_PER_MM
-HOME_AMOUNT_Z = 20 * STEPS_PER_MM
+STEPS_PER_MM_Z = 200 * 32 / 10
+MAX_STEPS_PER_COMMAND = 30000  # 16-bit unsigned integer, 2 bytes
+HOME_AMOUNT_X = 350 * STEPS_PER_MM
+HOME_AMOUNT_Y = 350 * STEPS_PER_MM
+HOME_AMOUNT_Z = math.floor(100 * STEPS_PER_MM_Z)
 
 class StageController:
     def __init__(self, port='/dev/ttyUSB0', baudrate=9600, timeout=1):
@@ -20,6 +21,7 @@ class StageController:
     def connect(self):
         try:
             self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+            time.sleep(2)
             print("Connected to Arduino")
         except serial.SerialException as e:
             print(f"Error connecting to Arduino: {e}")
@@ -49,7 +51,8 @@ class StageController:
         doneZ = False
         while True:
             message = self.read_message()
-            message = message[0]
+            # print(message)
+            message = message[0] if message != None and message != "" else ""
             if message == 'x':
                 doneX = True
             elif message == 'y':
@@ -60,14 +63,18 @@ class StageController:
                 pass
 
             if doneX and doneY and doneZ:
+              #  print("Finished moving")
                 break
 
     def moveBy(self, stepsX, stepsY, stepsZ, interval = 2, home = False):
         "Move the stage by the specified number of steps"
+
+        if interval < 2:
+            interval = 2
         
-        directionX = '1' if stepsX > 0 else '0'
-        directionY = '1' if stepsY > 0 else '0'
-        directionZ = '1' if stepsZ > 0 else '0'
+        directionX = '1' if stepsX < 0 else '0'
+        directionY = '1' if stepsY < 0 else '0'
+        directionZ = '1' if stepsZ < 0 else '0'
 
         stepsX = abs(stepsX)
         stepsY = abs(stepsY)
@@ -77,27 +84,12 @@ class StageController:
         cycleY = math.floor(stepsY / MAX_STEPS_PER_COMMAND)
         cycleZ = math.floor(stepsZ / MAX_STEPS_PER_COMMAND)
 
-        remainderX = stepsX % MAX_STEPS_PER_COMMAND
-        remainderY = stepsY % MAX_STEPS_PER_COMMAND
-        remainderZ = stepsZ % MAX_STEPS_PER_COMMAND
+        remainderX = int(stepsX % MAX_STEPS_PER_COMMAND)
+        remainderY = int(stepsY % MAX_STEPS_PER_COMMAND)
+        remainderZ = int(stepsZ % MAX_STEPS_PER_COMMAND)
 
         home = '0' if home else '1'
 
-        # Send the command to move the stage
-        maxCycle = max(cycleX, cycleY, cycleZ)
-        for i in range(maxCycle):
-            # command: a [steps] [direction] [interval] [home] [motor]
-            commandX = f"a {MAX_STEPS_PER_COMMAND} {directionX} {interval} {home} 0\n"
-            commandY = f"a {MAX_STEPS_PER_COMMAND} {directionY} {interval} {home} 1\n"
-            commandZ = f"a {MAX_STEPS_PER_COMMAND} {directionZ} {interval} {home} 2\n"
-            self.send_command(commandX)
-            self.send_command(commandY)
-            self.send_command(commandZ)
-
-            # Wait for the stage to finish moving before sending the next command.
-            # Should recieve x, y, z, when the stage is done moving.
-            self.wait_until_done_moving()
-            
         # Send the command to move the stage by the remainder
         commandX = f"a {remainderX} {directionX} {interval} {home} 0\n"
         commandY = f"a {remainderY} {directionY} {interval} {home} 1\n"
@@ -108,17 +100,39 @@ class StageController:
         self.send_command(commandZ)
         self.wait_until_done_moving()
 
-    def home(self):
+        # Send the command to move the stage
+        maxCycle = max(cycleX, cycleY, cycleZ)
+        for i in range(maxCycle):
+            # command: a [steps] [direction] [interval] [home] [motor]
+            commandX = f"a {MAX_STEPS_PER_COMMAND if i < cycleX else 0} {directionX} {interval} {home} 0\n"
+            commandY = f"a {MAX_STEPS_PER_COMMAND if i < cycleY else 0} {directionY} {interval} {home} 1\n"
+            commandZ = f"a {MAX_STEPS_PER_COMMAND if i < cycleZ else 0} {directionZ} {interval} {home} 2\n"
+            self.send_command(commandX)
+            self.send_command(commandY)
+            self.send_command(commandZ)
+            # Wait for the stage to finish moving before sending the next command.
+            # Should recieve x, y, z, when the stage is done moving.
+            self.wait_until_done_moving()
+            
+    
+    def home(self, homeX = True, homeY = True, homeZ = True):
         "Move the stage to the home position"
 
-        homeX = -HOME_AMOUNT_X
-        homeY = -HOME_AMOUNT_Y
-        homeZ = -HOME_AMOUNT_Z
 
-        self.moveBy(homeX, homeY, homeZ, home=True)
-        self.current_position = [0, 0, 0]
+        homeXSteps = -HOME_AMOUNT_X if homeX else 0
+        homeYSteps = -HOME_AMOUNT_Y if homeY else 0
+        homeZSteps = -HOME_AMOUNT_Z if homeZ else 0
 
-    def move_to(self, x, y, z):
+        self.moveBy(homeXSteps, homeYSteps, homeZSteps, home=True)
+
+        if homeX:
+            self.current_position[0] = 0
+        if homeY:
+            self.current_position[1] = 0
+        if homeZ:
+            self.current_position[2] = 0
+
+    def move_to(self, x, y, z, interval = 2):
         "Move the stage to the specified position in mm"
 
         moveX = x - self.current_position[0]
@@ -126,16 +140,16 @@ class StageController:
         moveZ = z - self.current_position[2]
 
         # Convert to steps
-        moveX = math.round(moveX * STEPS_PER_MM)
-        moveY = math.round(moveY * STEPS_PER_MM)
-        moveZ = math.round(moveZ * STEPS_PER_MM)
+        moveX = math.floor(moveX * STEPS_PER_MM)
+        moveY = math.floor(moveY * STEPS_PER_MM)
+        moveZ = math.floor(moveZ * STEPS_PER_MM_Z)
 
-        self.moveBy(moveX, moveY, moveZ)
+        self.moveBy(moveX, moveY, moveZ, interval)
         
         # Update the current position
         self.current_position[0] += moveX / STEPS_PER_MM
         self.current_position[1] += moveY / STEPS_PER_MM
-        self.current_position[2] += moveZ / STEPS_PER_MM
+        self.current_position[2] += moveZ / STEPS_PER_MM_Z
  
 
 
