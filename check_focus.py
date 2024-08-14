@@ -1,3 +1,8 @@
+## Code for focus check:
+## The current code checks a folder for image files ('.png', '.jpg', '.jpeg', '.bmp', '.tif') and outputs a focus value for each image. The larger the value, the better the focus. 
+## Need to be careful of multiple objects which may be in focus at 2 different z positions. Possible usage: run the check_focus command on each image at changing Z and only save the focus value. 
+## Or save images at each Z position and save the value. Move to the highest value position and reiterate for finer movement.
+
 import cv2
 import os
 import matplotlib.pyplot as plt
